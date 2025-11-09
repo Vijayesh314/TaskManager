@@ -6,12 +6,21 @@
     <title>Daily Routine Gamifier</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <!-- Header -->
         <header class="header">
             <h1 class="logo">🎮 Routine Quest</h1>
+            <nav class="main-nav">
+                <a href="{{ url_for('profile') }}" class="nav-link">
+                    <i class="fas fa-user"></i> Profile
+                </a>
+                <a href="{{ url_for('logout') }}" class="nav-link">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </nav>
             <div class="user-stats" id="userStats">
                 <div class="stat-item">
                     <span class="stat-label">Level</span>
