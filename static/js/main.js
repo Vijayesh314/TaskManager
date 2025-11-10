@@ -24,10 +24,106 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Setup form handler
     document.getElementById('taskForm').addEventListener('submit', handleTaskSubmit);
+    // Settings button and form handlers (if present)
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            openSettingsModal();
+        });
+    }
+
+    const settingsForm = document.getElementById('settingsForm');
+    if (settingsForm) {
+        settingsForm.addEventListener('submit', saveSettings);
+    }
+
+    const uploadBtn = document.getElementById('uploadAvatarBtn');
+    if (uploadBtn) {
+        uploadBtn.addEventListener('click', uploadAvatar);
+    }
+
+    // Load existing settings to populate the modal
+    loadSettings();
     
     // Check for notifications every minute
     setInterval(checkNotifications, 60000);
+    // Load and apply theme preference
+    loadTheme();
+    // Inject theme switcher UI
+    injectThemeSwitcher();
 });
+
+// Theme functions
+async function loadTheme(){
+    try{
+        const resp = await fetch(`${API_BASE}/api/theme`);
+        const data = await resp.json();
+        if(data && data.theme){
+            applyTheme(data.theme);
+        }
+    } catch(e){
+        console.warn('Could not load theme:', e);
+    }
+}
+
+function applyTheme(theme){
+    if(!theme) theme = 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+    // update select if present
+    const sel = document.getElementById('theme-select');
+    if(sel) sel.value = theme;
+}
+
+async function saveTheme(theme){
+    try{
+        const resp = await fetch(`${API_BASE}/api/theme`, {
+            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({theme})
+        });
+        if(resp.ok){
+            applyTheme(theme);
+            showNotification('Theme updated', 'success');
+        } else {
+            const data = await resp.json();
+            showNotification(data.error || 'Failed to save theme', 'error');
+        }
+    } catch(e){
+        showNotification('Network error saving theme', 'error');
+    }
+}
+
+function injectThemeSwitcher(){
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.right = '16px';
+    wrapper.style.bottom = '16px';
+    wrapper.style.zIndex = '9999';
+    wrapper.style.display = 'flex';
+    wrapper.style.gap = '8px';
+    wrapper.style.alignItems = 'center';
+
+    const select = document.createElement('select');
+    select.id = 'theme-select';
+    select.style.padding = '8px';
+    select.style.borderRadius = '8px';
+    select.style.border = '1px solid rgba(0,0,0,0.1)';
+    select.innerHTML = `
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="solar">Solar</option>
+        <option value="midnight">Midnight</option>
+        <option value="pastel">Pastel</option>
+    `;
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Apply';
+    btn.className = 'btn btn-small';
+    btn.style.padding = '8px 10px';
+    btn.onclick = () => saveTheme(select.value);
+
+    wrapper.appendChild(select);
+    wrapper.appendChild(btn);
+    document.body.appendChild(wrapper);
+}
 
 // Load user data
 async function loadUserData() {
@@ -428,4 +524,95 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// ----------------- Settings & Avatar -----------------
+async function loadSettings() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/settings`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const settings = data.settings || {};
+
+        const xp = document.getElementById('defaultXp');
+        const coins = document.getElementById('defaultCoins');
+        const notif = document.getElementById('notificationsEnabled');
+        const avatarPreview = document.getElementById('avatarPreview');
+
+        if (xp) xp.value = settings.default_xp_reward || 10;
+        if (coins) coins.value = settings.default_coin_reward || 5;
+        if (notif) notif.checked = settings.notifications_enabled === undefined ? true : settings.notifications_enabled;
+
+        if (avatarPreview && settings.avatar_url) {
+            avatarPreview.innerHTML = `<img src="${settings.avatar_url}" alt="avatar" style="width:64px;height:64px;border-radius:8px;object-fit:cover;">`;
+        }
+    } catch (e) {
+        console.warn('Could not load settings', e);
+    }
+}
+
+function openSettingsModal() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) modal.classList.add('active');
+}
+
+function closeSettingsModal() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) modal.classList.remove('active');
+}
+
+async function saveSettings(e) {
+    if (e) e.preventDefault();
+    const xp = document.getElementById('defaultXp').value;
+    const coins = document.getElementById('defaultCoins').value;
+    const notif = document.getElementById('notificationsEnabled').checked;
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/settings`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ default_xp_reward: xp, default_coin_reward: coins, notifications_enabled: notif })
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            showNotification('Settings saved', 'success');
+            closeSettingsModal();
+            await loadUserData();
+        } else {
+            showNotification(data.error || 'Failed to save settings', 'error');
+        }
+    } catch (e) {
+        console.error('Error saving settings', e);
+        showNotification('Network error saving settings', 'error');
+    }
+}
+
+async function uploadAvatar() {
+    const fileInput = document.getElementById('avatarFile');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showNotification('Choose a file first', 'warning');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/user/avatar`, { method: 'POST', body: form });
+        const data = await resp.json();
+        if (resp.ok) {
+            showNotification('Avatar uploaded', 'success');
+            const preview = document.getElementById('avatarPreview');
+            if (preview && data.avatar_url) {
+                preview.innerHTML = `<img src="${data.avatar_url}" alt="avatar" style="width:64px;height:64px;border-radius:8px;object-fit:cover;">`;
+            }
+            await loadUserData();
+        } else {
+            showNotification(data.error || 'Failed to upload avatar', 'error');
+        }
+    } catch (e) {
+        console.error('Avatar upload failed', e);
+        showNotification('Network error uploading avatar', 'error');
+    }
 }
