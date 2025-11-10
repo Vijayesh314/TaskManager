@@ -238,12 +238,11 @@ def initialize_user(data, user_id):
 
 @app.route('/')
 def index():
-    """Main page"""
     if 'username' not in session:
         return redirect(url_for('login'))
     return render_template('index.html')
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         email = request.form["email"]
