@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar - Routine Quest</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="logo">📅 Task Calendar</h1>
+            <nav class="main-nav">
+                <a href="{{ url_for('index') }}" class="nav-link">
+                    <i class="fas fa-home"></i> Home
+                </a>
+                <a href="{{ url_for('gamemechanics') }}" class="nav-link">
+                    <i class="fas fa-scroll"></i> Quests
+                </a>
+                <a href="{{ url_for('profile') }}" class="nav-link">
+                    <i class="fas fa-user"></i> Profile
+                </a>
+                <a href="{{ url_for('logout') }}" class="nav-link">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </nav>
+        </header>
+
+        <!-- Calendar View -->
+        <div class="panel calendar-panel">
+            <div class="calendar-header">
+                <button id="prevMonth" class="btn btn-small"><i class="fas fa-chevron-left"></i> Previous</button>
+                <h2 id="monthTitle" style="flex:1;text-align:center;margin:0;"></h2>
+                <button id="nextMonth" class="btn btn-small">Next <i class="fas fa-chevron-right"></i></button>
+            </div>
+
+            <div class="calendar-controls">
+                <button id="viewMonthBtn" class="btn btn-small active">Month View</button>
+                <button id="viewWeekBtn" class="btn btn-small">Week View</button>
+                <select id="taskFilter" style="padding:8px;border-radius:8px;border:1px solid var(--border-color);">
+                    <option value="all">All Tasks</option>
+                    <option value="completed">Completed</option>
+                    <option value="recurring">Recurring</option>
+                </select>
+            </div>
+
+            <div id="calendar" class="calendar-grid"></div>
+            <div id="weekView" class="week-view" style="display:none;"></div>
+        </div>
+
+        <!-- Day Details Panel -->
+        <div class="panel day-details-panel" id="dayDetailsPanel" style="display:none;">
+            <h2>📌 Tasks for <span id="selectedDate"></span></h2>
+            <div id="dayTasksList" class="tasks-list"></div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="panel stats-panel">
+            <h2>📊 Monthly Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Tasks</h3>
+                    <p id="totalTasks" style="font-size:1.8em;color:var(--primary-color);font-weight:bold;">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Total XP</h3>
+                    <p id="totalXp" style="font-size:1.8em;color:var(--success-color);font-weight:bold;">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Coins</h3>
+                    <p id="totalCoins" style="font-size:1.8em;color:var(--warning-color);font-weight:bold;">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Completion Rate</h3>
+                    <p id="completionRate" style="font-size:1.8em;color:var(--secondary-color);font-weight:bold;">0%</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Heatmap Legend -->
+        <div class="panel heatmap-legend">
+            <h3>Activity Heatmap</h3>
+            <div style="display:flex;gap:15px;align-items:center;flex-wrap:wrap;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div style="width:16px;height:16px;background:#e5e7eb;border-radius:4px;"></div>
+                    <span>No activity</span>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div style="width:16px;height:16px;background:#a7f3d0;border-radius:4px;"></div>
+                    <span>1-2 tasks</span>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div style="width:16px;height:16px;background:#6ee7b7;border-radius:4px;"></div>
+                    <span>3-5 tasks</span>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div style="width:16px;height:16px;background:#10b981;border-radius:4px;"></div>
+                    <span>6+ tasks</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script>
+        // Calendar state
+        let currentDate = new Date();
+        let allTasks = [];
+        let tasksByDate = {};
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCalendarTasks();
+            renderCalendar();
+            setupEventListeners();
+            loadTheme();
+            injectThemeSwitcher();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('prevMonth').addEventListener('click', () => {
+                currentDate.setMonth(currentDate.getMonth() - 1);
+                renderCalendar();
+                loadCalendarTasks();
+            });
+
+            document.getElementById('nextMonth').addEventListener('click', () => {
+                currentDate.setMonth(currentDate.getMonth() + 1);
+                renderCalendar();
+                loadCalendarTasks();
+            });
+
+            document.getElementById('viewMonthBtn').addEventListener('click', () => {
+                document.getElementById('calendar').style.display = 'grid';
+                document.getElementById('weekView').style.display = 'none';
+                document.getElementById('viewMonthBtn').classList.add('active');
+                document.getElementById('viewWeekBtn').classList.remove('active');
+            });
+
+            document.getElementById('viewWeekBtn').addEventListener('click', () => {
+                document.getElementById('calendar').style.display = 'none';
+                document.getElementById('weekView').style.display = 'block';
+                document.getElementById('viewMonthBtn').classList.remove('active');
+                document.getElementById('viewWeekBtn').classList.add('active');
+                renderWeekView();
+            });
+
+            document.getElementById('taskFilter').addEventListener('change', (e) => {
+                filterTasks(e.target.value);
+            });
+        }
+
+        async function loadCalendarTasks() {
+            try {
+                const year = currentDate.getFullYear();
+                const month = currentDate.getMonth();
+                const start = new Date(year, month, 1).toISOString().split('T')[0];
+                const end = new Date(year, month + 1, 1).toISOString().split('T')[0];
+
+                const resp = await fetch(`/api/calendar/tasks?start=${start}&end=${end}`);
+                const data = await resp.json();
+                allTasks = data.tasks || [];
+                buildTasksByDate();
+                updateStatistics();
+            } catch (e) {
+                console.error('Error loading calendar tasks', e);
+            }
+        }
+
+        function buildTasksByDate() {
+            tasksByDate = {};
+            allTasks.forEach(task => {
+                if (!tasksByDate[task.date]) {
+                    tasksByDate[task.date] = [];
+                }
+                tasksByDate[task.date].push(task);
+            });
+        }
+
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+
+            // Update month title
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                              'July', 'August', 'September', 'October', 'November', 'December'];
+            document.getElementById('monthTitle').textContent = `${monthNames[month]} ${year}`;
+
+            // Get first day of month and total days
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            // Build calendar grid
+            const calendar = document.getElementById('calendar');
+            calendar.innerHTML = '';
+
+            // Day headers
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            dayNames.forEach(day => {
+                const header = document.createElement('div');
+                header.className = 'calendar-day-header';
+                header.textContent = day;
+                calendar.appendChild(header);
+            });
+
+            // Empty cells for days before month starts
+            for (let i = 0; i < firstDay; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.className = 'calendar-day empty';
+                calendar.appendChild(emptyCell);
+            }
+
+            // Days of the month
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayCell = document.createElement('div');
+                const date = new Date(year, month, day);
+                const dateStr = date.toISOString().split('T')[0];
+                const tasks = tasksByDate[dateStr] || [];
+                const taskCount = tasks.length;
+
+                dayCell.className = 'calendar-day';
+                dayCell.innerHTML = `
+                    <div class="day-number">${day}</div>
+                    <div class="day-tasks">
+                        ${tasks.length > 0 ? `<span class="task-count">${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}</span>` : '<span class="task-count">-</span>'}
+                    </div>
+                    <div class="day-heatmap" style="background:${getHeatmapColor(taskCount)};"></div>
+                `;
+
+                // Add click handler to show day details
+                dayCell.addEventListener('click', () => showDayDetails(dateStr, tasks));
+                calendar.appendChild(dayCell);
+            }
+        }
+
+        function getHeatmapColor(count) {
+            if (count === 0) return '#e5e7eb';
+            if (count <= 2) return '#a7f3d0';
+            if (count <= 5) return '#6ee7b7';
+            return '#10b981';
+        }
+
+        function showDayDetails(dateStr, tasks) {
+            const panel = document.getElementById('dayDetailsPanel');
+            document.getElementById('selectedDate').textContent = new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            
+            const tasksList = document.getElementById('dayTasksList');
+            if (tasks.length === 0) {
+                tasksList.innerHTML = '<div class="empty-state"><p>No tasks completed on this day</p></div>';
+            } else {
+                tasksList.innerHTML = tasks.map(task => `
+                    <div class="task-item completed">
+                        <div class="task-title">${escapeHtml(task.title)}</div>
+                        <div class="task-rewards">
+                            <span class="reward-badge">⭐ ${task.xp} XP</span>
+                            <span class="reward-badge coin">💰 ${task.coins} Coins</span>
+                        </div>
+                        ${task.recurring ? `<div class="task-meta">🔄 ${task.frequency}</div>` : ''}
+                    </div>
+                `).join('');
+            }
+            panel.style.display = 'block';
+        }
+
+        function renderWeekView() {
+            const weekView = document.getElementById('weekView');
+            const startOfWeek = new Date(currentDate);
+            startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
+
+            weekView.innerHTML = '<div class="week-container">';
+            
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(startOfWeek);
+                date.setDate(startOfWeek.getDate() + i);
+                const dateStr = date.toISOString().split('T')[0];
+                const tasks = tasksByDate[dateStr] || [];
+
+                weekView.innerHTML += `
+                    <div class="week-day">
+                        <h3>${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</h3>
+                        <div class="week-tasks">
+                            ${tasks.length > 0 ? tasks.map(task => `
+                                <div class="task-item">
+                                    <div class="task-title">${escapeHtml(task.title)}</div>
+                                    <span class="reward-badge">⭐ ${task.xp}</span>
+                                </div>
+                            `).join('') : '<p style="color:var(--text-secondary);">No tasks</p>'}
+                        </div>
+                    </div>
+                `;
+            }
+            weekView.innerHTML += '</div>';
+        }
+
+        function updateStatistics() {
+            let totalTasks = allTasks.length;
+            let totalXp = allTasks.reduce((sum, t) => sum + (t.xp || 0), 0);
+            let totalCoins = allTasks.reduce((sum, t) => sum + (t.coins || 0), 0);
+
+            document.getElementById('totalTasks').textContent = totalTasks;
+            document.getElementById('totalXp').textContent = totalXp;
+            document.getElementById('totalCoins').textContent = totalCoins;
+
+            // Estimate completion rate based on recurring tasks
+            const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+            const recurringTasks = allTasks.filter(t => t.recurring).length;
+            const completionRate = recurringTasks > 0 ? Math.round((totalTasks / (recurringTasks * daysInMonth)) * 100) : 0;
+            document.getElementById('completionRate').textContent = Math.min(100, completionRate) + '%';
+        }
+
+        function filterTasks(filter) {
+            let filtered = allTasks;
+            if (filter === 'completed') {
+                filtered = allTasks.filter(t => !t.recurring);
+            } else if (filter === 'recurring') {
+                filtered = allTasks.filter(t => t.recurring);
+            }
+            allTasks = filtered;
+            buildTasksByDate();
+            renderCalendar();
+            updateStatistics();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+
+    <style>
+        .calendar-panel {
+            grid-column: 1 / -1;
+        }
+
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .calendar-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .calendar-day-header {
+            text-align: center;
+            font-weight: 600;
+            padding: 10px;
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .calendar-day {
+            background: var(--bg-color);
+            border-radius: 10px;
+            padding: 12px 8px;
+            min-height: 100px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .calendar-day:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+            border-color: var(--primary-color);
+        }
+
+        .calendar-day.empty {
+            background: transparent;
+            cursor: default;
+        }
+
+        .calendar-day.empty:hover {
+            transform: none;
+            box-shadow: none;
+            border-color: transparent;
+        }
+
+        .day-number {
+            font-weight: 700;
+            font-size: 1.1em;
+            color: var(--text-primary);
+        }
+
+        .day-tasks {
+            text-align: center;
+        }
+
+        .task-count {
+            display: inline-block;
+            background: var(--primary-color);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+
+        .day-heatmap {
+            height: 4px;
+            border-radius: 2px;
+            width: 100%;
+            margin-top: auto;
+        }
+
+        .week-view {
+            display: none;
+        }
+
+        .week-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .week-day {
+            background: var(--bg-color);
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .week-day h3 {
+            margin: 0 0 10px 0;
+            color: var(--text-primary);
+            font-size: 0.95em;
+        }
+
+        .week-tasks {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .day-details-panel {
+            grid-column: 1 / -1;
+            margin-top: 20px;
+        }
+
+        .stats-panel {
+            grid-column: 1 / -1;
+            margin-top: 20px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+        }
+
+        .heatmap-legend {
+            grid-column: 1 / -1;
+            margin-top: 20px;
+        }
+
+        .btn.active {
+            background: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+    </style>
+</body>
+</html>
