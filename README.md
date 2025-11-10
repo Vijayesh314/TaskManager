@@ -183,5 +183,4 @@ mountainhacks/
 - User activity logs and statistics
 
 ## License
-
-This project is created for Mountain Hacks hackathon.
+MIT License
