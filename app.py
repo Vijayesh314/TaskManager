@@ -24,6 +24,91 @@ SHOP_ITEMS = {
     'tent': {'name': 'Cloud Tent', 'cost': 250, 'description': 'A cozy shelter in the mountains'}
 }
 
+# Quest templates
+QUEST_TEMPLATES = {
+    'early_bird': {
+        'name': 'Early Bird',
+        'description': 'Complete 5 tasks before 9 AM',
+        'tasks_required': 5,
+        'time_limit': 'morning',
+        'xp_reward': 100,
+        'coin_reward': 50
+    },
+    'streak_master': {
+        'name': 'Streak Master',
+        'description': 'Maintain a 7-day completion streak',
+        'streak_required': 7,
+        'xp_reward': 150,
+        'coin_reward': 75
+    },
+    'coin_collector': {
+        'name': 'Coin Collector',
+        'description': 'Earn 500 coins total',
+        'coins_required': 500,
+        'xp_reward': 120,
+        'coin_reward': 100
+    },
+    'level_up': {
+        'name': 'Level Up Master',
+        'description': 'Reach level 10',
+        'level_required': 10,
+        'xp_reward': 200,
+        'coin_reward': 150
+    },
+    'shopping_spree': {
+        'name': 'Shopping Spree',
+        'description': 'Unlock 5 shop items',
+        'items_required': 5,
+        'xp_reward': 130,
+        'coin_reward': 80
+    }
+}
+
+# Challenge templates (time-limited)
+CHALLENGE_TEMPLATES = {
+    'daily_grind': {
+        'name': 'Daily Grind',
+        'description': 'Complete 3 tasks in 24 hours',
+        'difficulty': 'easy',
+        'tasks_required': 3,
+        'duration_hours': 24,
+        'xp_reward': 50,
+        'coin_reward': 25,
+        'icon': '📅'
+    },
+    'power_hour': {
+        'name': 'Power Hour',
+        'description': 'Complete 5 tasks in 1 hour',
+        'difficulty': 'hard',
+        'tasks_required': 5,
+        'duration_hours': 1,
+        'xp_reward': 200,
+        'coin_reward': 100,
+        'icon': '⚡'
+    },
+    'weekend_warrior': {
+        'name': 'Weekend Warrior',
+        'description': 'Complete 10 tasks in 48 hours',
+        'difficulty': 'medium',
+        'tasks_required': 10,
+        'duration_hours': 48,
+        'xp_reward': 150,
+        'coin_reward': 75,
+        'icon': '🗓️'
+    },
+    'night_owl': {
+        'name': 'Night Owl',
+        'description': 'Complete 4 tasks after 8 PM',
+        'difficulty': 'medium',
+        'tasks_required': 4,
+        'time_constraint': 'after_8pm',
+        'duration_hours': 24,
+        'xp_reward': 120,
+        'coin_reward': 60,
+        'icon': '🌙'
+    }
+}
+
 def load_data():
     """Load user data from JSON file"""
     if os.path.exists(DATA_FILE):
@@ -32,7 +117,10 @@ def load_data():
     return {
         'users': {},
         'tasks': {},
-        'achievements': {}
+        'achievements': {},
+        'quests': {},
+        'challenges': {},
+        'quest_templates': {}
     }
 
 def save_data(data):
@@ -57,7 +145,14 @@ def initialize_user(data, user_id):
             'last_completed_date': None,
             'total_tasks_completed': 0,
             'badges': [],
-            'inventory': []
+            'inventory': [],
+            'username': 'Player',
+            'joined_date': datetime.now().isoformat(),
+            'total_coins_earned': 0,
+            'active_quests': [],
+            'completed_quests': [],
+            'active_challenges': [],
+            'completed_challenges': []
         }
     # Migrate old data structure if needed
     user = data['users'][user_id]
@@ -68,6 +163,21 @@ def initialize_user(data, user_id):
     if 'inventory' not in user:
         user['inventory'] = []
         save_data(data)
+    # Add new fields if they don't exist
+    if 'username' not in user:
+        user['username'] = 'Player'
+    if 'joined_date' not in user:
+        user['joined_date'] = datetime.now().isoformat()
+    if 'total_coins_earned' not in user:
+        user['total_coins_earned'] = user.get('coins', 0)
+    if 'active_quests' not in user:
+        user['active_quests'] = []
+    if 'completed_quests' not in user:
+        user['completed_quests'] = []
+    if 'active_challenges' not in user:
+        user['active_challenges'] = []
+    if 'completed_challenges' not in user:
+        user['completed_challenges'] = []
     return user
 
 @app.route('/')
@@ -386,6 +496,433 @@ def unlock_customization():
         }
     })
 
+# ============ QUESTS ENDPOINTS ============
+
+@app.route('/api/quest-templates', methods=['GET'])
+def get_quest_templates():
+    """Get available quest templates"""
+    return jsonify({'templates': QUEST_TEMPLATES})
+
+@app.route('/api/quests', methods=['GET'])
+def get_quests():
+    """Get all quests for current user"""
+    data = load_data()
+    user_id = get_user_id()
+    user = initialize_user(data, user_id)
+    
+    # Get active and completed quests
+    active_quests = []
+    completed_quests = []
+    
+    if 'active_quests' in data and user_id in data['active_quests']:
+        for quest_id in data['active_quests'][user_id]:
+            if quest_id in data['quests']:
+                quest = data['quests'][quest_id]
+                quest['id'] = quest_id
+                active_quests.append(quest)
+    
+    if 'completed_quests' in data and user_id in data['completed_quests']:
+        for quest_id in data['completed_quests'][user_id]:
+            if quest_id in data['quests']:
+                quest = data['quests'][quest_id]
+                quest['id'] = quest_id
+                completed_quests.append(quest)
+    
+    return jsonify({
+        'active': active_quests,
+        'completed': completed_quests,
+        'templates': QUEST_TEMPLATES
+    })
+
+@app.route('/api/quests', methods=['POST'])
+def create_quest():
+    """Start a new quest from template"""
+    data = load_data()
+    user_id = get_user_id()
+    user = initialize_user(data, user_id)
+    
+    quest_data = request.json
+    template_id = quest_data.get('template_id')
+    
+    if template_id not in QUEST_TEMPLATES:
+        return jsonify({'error': 'Invalid quest template'}), 400
+    
+    template = QUEST_TEMPLATES[template_id]
+    quest_id = str(uuid.uuid4())
+    
+    new_quest = {
+        'id': quest_id,
+        'user_id': user_id,
+        'template_id': template_id,
+        'name': template['name'],
+        'description': template['description'],
+        'started_at': datetime.now().isoformat(),
+        'progress': 0,
+        'completed': False,
+        'xp_reward': template['xp_reward'],
+        'coin_reward': template['coin_reward'],
+        'metadata': {k: v for k, v in template.items() if k not in ['name', 'description', 'xp_reward', 'coin_reward']}
+    }
+    
+    data['quests'][quest_id] = new_quest
+    
+    # Track user quests
+    if 'active_quests' not in data:
+        data['active_quests'] = {}
+    if user_id not in data['active_quests']:
+        data['active_quests'][user_id] = []
+    
+    data['active_quests'][user_id].append(quest_id)
+    
+    save_data(data)
+    
+    return jsonify({
+        'quest': new_quest,
+        'message': f'Started quest: {template["name"]}'
+    })
+
+@app.route('/api/quests/<quest_id>/check', methods=['POST'])
+def check_quest_progress(quest_id):
+    """Check if quest objective is met and complete if so"""
+    data = load_data()
+    user_id = get_user_id()
+    user = initialize_user(data, user_id)
+    
+    if quest_id not in data['quests'] or data['quests'][quest_id].get('user_id') != user_id:
+        return jsonify({'error': 'Quest not found'}), 404
+    
+    quest = data['quests'][quest_id]
+    
+    if quest['completed']:
+        return jsonify({'error': 'Quest already completed'}), 400
+    
+    # Check progress based on template
+    template_id = quest['template_id']
+    template = QUEST_TEMPLATES[template_id]
+    progress = 0
+    completed = False
+    
+    if template_id == 'early_bird':
+        # Count tasks completed today before 9 AM
+        today = datetime.now().date().isoformat()
+        morning_tasks = sum(1 for task in data['tasks'].values() 
+                           if task.get('user_id') == user_id 
+                           and today in task.get('completed_dates', [])
+                           and task.get('scheduled_time', '') < '09:00')
+        progress = min(morning_tasks, template['tasks_required'])
+        completed = morning_tasks >= template['tasks_required']
+    
+    elif template_id == 'streak_master':
+        progress = user['streak']
+        completed = user['streak'] >= template['streak_required']
+    
+    elif template_id == 'coin_collector':
+        # Total coins earned (current + spent on items)
+        total_earned = user['coins'] + sum(SHOP_ITEMS[item]['cost'] 
+                                          for item in user.get('inventory', []) 
+                                          if item in SHOP_ITEMS)
+        progress = total_earned
+        completed = total_earned >= template['coins_required']
+    
+    elif template_id == 'level_up':
+        progress = user['level']
+        completed = user['level'] >= template['level_required']
+    
+    elif template_id == 'shopping_spree':
+        progress = len(user.get('inventory', []))
+        completed = len(user.get('inventory', [])) >= template['items_required']
+    
+    quest['progress'] = progress
+    
+    if completed and not quest['completed']:
+        quest['completed'] = True
+        quest['completed_at'] = datetime.now().isoformat()
+        
+        # Award rewards
+        user['xp'] += quest['xp_reward']
+        user['coins'] += quest['coin_reward']
+        user['total_coins_earned'] += quest['coin_reward']
+        
+        # Move quest to completed
+        if user_id in data['active_quests']:
+            data['active_quests'][user_id].remove(quest_id)
+        
+        if 'completed_quests' not in data:
+            data['completed_quests'] = {}
+        if user_id not in data['completed_quests']:
+            data['completed_quests'][user_id] = []
+        
+        data['completed_quests'][user_id].append(quest_id)
+        
+        # Check for level up
+        xp_for_next_level = user['level'] * 100
+        level_up = False
+        while user['xp'] >= xp_for_next_level:
+            user['level'] += 1
+            user['xp'] -= xp_for_next_level
+            xp_for_next_level = user['level'] * 100
+            level_up = True
+            user['coins'] += 50
+        
+        save_data(data)
+        
+        return jsonify({
+            'completed': True,
+            'xp_reward': quest['xp_reward'],
+            'coin_reward': quest['coin_reward'],
+            'user': user,
+            'level_up': level_up,
+            'message': f'Quest completed: {quest["name"]}!'
+        })
+    
+    save_data(data)
+    
+    return jsonify({
+        'completed': False,
+        'progress': progress,
+        'required': template.get('tasks_required') or template.get('streak_required') or template.get('coins_required') or template.get('level_required') or template.get('items_required'),
+        'message': f'Progress: {progress}/{template.get("tasks_required") or template.get("streak_required") or template.get("coins_required") or template.get("level_required") or template.get("items_required")}'
+    })
+
+@app.route('/api/quests/<quest_id>', methods=['DELETE'])
+def abandon_quest(quest_id):
+    """Abandon an active quest"""
+    data = load_data()
+    user_id = get_user_id()
+    
+    if quest_id not in data['quests'] or data['quests'][quest_id].get('user_id') != user_id:
+        return jsonify({'error': 'Quest not found'}), 404
+    
+    if user_id in data.get('active_quests', {}):
+        if quest_id in data['active_quests'][user_id]:
+            data['active_quests'][user_id].remove(quest_id)
+    
+    save_data(data)
+    return jsonify({'message': 'Quest abandoned'})
+
+# ============ CHALLENGES ENDPOINTS ============
+
+@app.route('/api/challenge-templates', methods=['GET'])
+def get_challenge_templates():
+    """Get available challenge templates"""
+    return jsonify({'templates': CHALLENGE_TEMPLATES})
+
+@app.route('/api/challenges', methods=['GET'])
+def get_challenges():
+    """Get all challenges for current user"""
+    data = load_data()
+    user_id = get_user_id()
+    user = initialize_user(data, user_id)
+    
+    active_challenges = []
+    completed_challenges = []
+    
+    # Get all challenges and filter for this user
+    for challenge_id, challenge in data.get('challenges', {}).items():
+        if challenge.get('user_id') == user_id:
+            challenge_data = challenge.copy()
+            challenge_data['id'] = challenge_id
+            
+            # Calculate time remaining
+            if not challenge.get('completed'):
+                started_at = datetime.fromisoformat(challenge['started_at'])
+                duration = challenge.get('duration_hours', 24)
+                expires_at = started_at + datetime.timedelta(hours=duration)
+                time_remaining = (expires_at - datetime.now()).total_seconds()
+                
+                if time_remaining > 0:
+                    challenge_data['time_remaining_seconds'] = int(time_remaining)
+                    active_challenges.append(challenge_data)
+                else:
+                    # Challenge expired
+                    challenge['completed'] = True
+                    challenge['expired'] = True
+                    completed_challenges.append(challenge_data)
+            else:
+                completed_challenges.append(challenge_data)
+    
+    save_data(data)
+    
+    return jsonify({
+        'active': active_challenges,
+        'completed': completed_challenges,
+        'templates': CHALLENGE_TEMPLATES
+    })
+
+@app.route('/api/challenges', methods=['POST'])
+def create_challenge():
+    """Start a new challenge from template"""
+    data = load_data()
+    user_id = get_user_id()
+    user = initialize_user(data, user_id)
+    
+    challenge_data = request.json
+    template_id = challenge_data.get('template_id')
+    
+    if template_id not in CHALLENGE_TEMPLATES:
+        return jsonify({'error': 'Invalid challenge template'}), 400
+    
+    template = CHALLENGE_TEMPLATES[template_id]
+    challenge_id = str(uuid.uuid4())
+    
+    new_challenge = {
+        'id': challenge_id,
+        'user_id': user_id,
+        'template_id': template_id,
+        'name': template['name'],
+        'description': template['description'],
+        'difficulty': template['difficulty'],
+        'icon': template.get('icon', '🎯'),
+        'started_at': datetime.now().isoformat(),
+        'progress': 0,
+        'completed': False,
+        'duration_hours': template['duration_hours'],
+        'xp_reward': template['xp_reward'],
+        'coin_reward': template['coin_reward'],
+        'metadata': {k: v for k, v in template.items() 
+                    if k not in ['name', 'description', 'difficulty', 'icon', 'xp_reward', 'coin_reward', 'duration_hours']}
+    }
+    
+    if 'challenges' not in data:
+        data['challenges'] = {}
+    
+    data['challenges'][challenge_id] = new_challenge
+    save_data(data)
+    
+    return jsonify({
+        'challenge': new_challenge,
+        'message': f'Challenge started: {template["name"]}'
+    })
+
+@app.route('/api/challenges/<challenge_id>/check', methods=['POST'])
+def check_challenge_progress(challenge_id):
+    """Check challenge progress"""
+    data = load_data()
+    user_id = get_user_id()
+    user = initialize_user(data, user_id)
+    
+    if challenge_id not in data.get('challenges', {}) or data['challenges'][challenge_id].get('user_id') != user_id:
+        return jsonify({'error': 'Challenge not found'}), 404
+    
+    challenge = data['challenges'][challenge_id]
+    
+    if challenge['completed']:
+        return jsonify({'error': 'Challenge already completed'}), 400
+    
+    template_id = challenge['template_id']
+    template = CHALLENGE_TEMPLATES[template_id]
+    
+    # Count tasks completed since challenge started
+    challenge_start = datetime.fromisoformat(challenge['started_at'])
+    tasks_completed_since = 0
+    
+    for task in data['tasks'].values():
+        if task.get('user_id') == user_id:
+            for completed_date in task.get('completed_dates', []):
+                completed_datetime = datetime.fromisoformat(completed_date + 'T00:00:00')
+                if completed_datetime >= challenge_start:
+                    tasks_completed_since += 1
+    
+    progress = tasks_completed_since
+    completed = progress >= template['tasks_required']
+    
+    challenge['progress'] = progress
+    
+    if completed and not challenge['completed']:
+        challenge['completed'] = True
+        challenge['completed_at'] = datetime.now().isoformat()
+        
+        # Award rewards
+        user['xp'] += challenge['xp_reward']
+        user['coins'] += challenge['coin_reward']
+        user['total_coins_earned'] += challenge['coin_reward']
+        
+        # Check for level up
+        xp_for_next_level = user['level'] * 100
+        level_up = False
+        while user['xp'] >= xp_for_next_level:
+            user['level'] += 1
+            user['xp'] -= xp_for_next_level
+            xp_for_next_level = user['level'] * 100
+            level_up = True
+            user['coins'] += 50
+        
+        save_data(data)
+        
+        return jsonify({
+            'completed': True,
+            'xp_reward': challenge['xp_reward'],
+            'coin_reward': challenge['coin_reward'],
+            'user': user,
+            'level_up': level_up,
+            'message': f'Challenge completed: {challenge["name"]}!'
+        })
+    
+    save_data(data)
+    
+    return jsonify({
+        'completed': False,
+        'progress': progress,
+        'required': template['tasks_required'],
+        'message': f'Progress: {progress}/{template["tasks_required"]}'
+    })
+
+# ============ LEADERBOARDS ENDPOINTS ============
+
+@app.route('/api/leaderboards', methods=['GET'])
+def get_leaderboards():
+    """Get global leaderboards"""
+    data = load_data()
+    user_id = get_user_id()
+    current_user = initialize_user(data, user_id)
+    
+    # Create user list with stats
+    users_list = []
+    for uid, user in data['users'].items():
+        total_earned = user.get('coins', 0) + sum(SHOP_ITEMS[item]['cost'] 
+                                                   for item in user.get('inventory', []) 
+                                                   if item in SHOP_ITEMS)
+        users_list.append({
+            'id': uid,
+            'username': user.get('username', 'Player'),
+            'level': user.get('level', 1),
+            'xp': user.get('xp', 0),
+            'coins': user.get('coins', 0),
+            'total_coins_earned': total_earned,
+            'streak': user.get('streak', 0),
+            'total_tasks_completed': user.get('total_tasks_completed', 0),
+            'badges_count': len(user.get('badges', [])),
+            'is_current_user': uid == user_id
+        })
+    
+    # Sort by different criteria
+    by_level = sorted(users_list, key=lambda x: (-x['level'], -x['xp']))
+    by_xp = sorted(users_list, key=lambda x: -x['xp'])
+    by_coins = sorted(users_list, key=lambda x: -x['coins'])
+    by_streak = sorted(users_list, key=lambda x: -x['streak'])
+    by_tasks = sorted(users_list, key=lambda x: -x['total_tasks_completed'])
+    
+    # Add rank to each leaderboard
+    for i, user in enumerate(by_level):
+        user['rank_level'] = i + 1
+    for i, user in enumerate(by_xp):
+        user['rank_xp'] = i + 1
+    for i, user in enumerate(by_coins):
+        user['rank_coins'] = i + 1
+    for i, user in enumerate(by_streak):
+        user['rank_streak'] = i + 1
+    for i, user in enumerate(by_tasks):
+        user['rank_tasks'] = i + 1
+    
+    return jsonify({
+        'by_level': by_level[:50],  # Top 50
+        'by_xp': by_xp[:50],
+        'by_coins': by_coins[:50],
+        'by_streak': by_streak[:50],
+        'by_tasks': by_tasks[:50],
+        'current_user': current_user
+    })
+
 @app.route('/profile')
 def profile():
     """User profile page"""
@@ -395,6 +932,9 @@ def profile():
     data = load_data()
     user_id = get_user_id()
     user = initialize_user(data, user_id)
+    
+    # Store username in user data
+    user['username'] = session['username']
     
     # Initialize inventory if doesn't exist
     if 'inventory' not in user:
@@ -416,6 +956,13 @@ def profile():
                          user=user,
                          purchased_items=purchased_items,
                          total_coins_earned=total_coins_earned)
+
+@app.route('/gamemechanics')
+def gamemechanics():
+    """Quests, challenges, and leaderboards page"""
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    return render_template('gamemechanics.html')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
